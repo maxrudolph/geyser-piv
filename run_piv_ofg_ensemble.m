@@ -24,23 +24,14 @@ movie = true;
 filepath = '/Volumes/GeyserData/Old Faithful/04-11-2025/32216_1_102_Y20250411H090557.221485000';
 % filenames = dir([filepath '/img*.png']);
 video_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/32216_1_102_Y20250411H090557.221485000.mp4';
-fs = 120;        % framerate, 1/s
 roi_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/32216_1_102_Y20250411H090557.221485000_roi.mat';
-location = 1;
 % SCALE INFO
-
+% location 1 is 109m from vent. FOV at 35 mm is 59.6 m -> 59.6/1920=0.0310
 % m/pixel, 120 fps
 % note that this varies video by video depending on location and framerate.
-switch location
-    case 1
-        % location 1 is 109m from vent. FOV at 35 mm is 59.6 m -> 59.6/1920=0.0310
-        lscale = 0.0310;        % (meters) = (lscale)*(pixels)        
-        vscale = lscale*fs;    %(pixel/frame)*(meter/pixel)*(frame/s)
-    case 4
-
-    else
-
-end
+lscale = 0.0310;        % (meters) = (lscale)*(pixels) 
+fs = 120;        % framerate, 1/s
+vscale = lscale*fs;    %(pixel/frame)*(meter/pixel)*(frame/s)
 
 load(roi_file);
 video = VideoReader(video_file);
@@ -131,7 +122,7 @@ correlation_map=x; % correlation coefficient
 % slicedfilename2{j}=filenames{i+1}; % end
 % j = j+1;
 % end
-
+% amount = 1000;
 %% Main PIV analysis loop:
 if ~movie
     % parallel
@@ -157,64 +148,77 @@ if ~movie
     %     end
     % end
 else
-    pairs_processed = 0;
-    natime = 256; % number of image pairs to process at a time
-    images = cell(natime+1,1);
-    % read first frame
-    images{1} = video.readFrame();
+    groups_processed = 0;
+    natime = 33; % number of image sequences to process at a time
+    ensemble_size = 8; % number of images to analyze at once (ensemble size)
+    images = cell(natime+ensemble_size-1,1);
+    % read first frames
+    nread=0;
+    for i=1:ensemble_size      
+        images{i} = video.readFrame();
+        nread = nread+1;
+    end
     
-    frames = [1:natime ; 2:natime+1];% index of image pairs
-    while pairs_processed < amount-1 % outer loop over pairs
-        if pairs_processed+natime > amount
-            natime = amount-1-pairs_processed; % special case for last collection of pairs
+    frames = [1:natime ; ensemble_size:natime+ensemble_size-1];% index of image pairs
+    while groups_processed < amount-ensemble_size % outer loop over pairs
+        if groups_processed+(natime+ensemble_size-1) > amount
+            natime = amount-(groups_processed+ensemble_size); % special case for last collection of pairs
         end
         % read frames (serial)
-        for i=2:natime+1
+        for i=(ensemble_size):(ensemble_size + natime-1)
             images{i} = video.readFrame();
+            nread = nread+1;
         end
         % preprocess frames (parallel)
-        pimages = cell(natime+1,1);
-        parfor i=1:natime+1
-            pimages{i} = preproc.PIVlab_preproc (images{i},...
-                p{1,2},...
-                p{2,2},...
-                p{3,2},...
-                p{4,2},...
-                p{5,2},...
-                p{6,2},...
-                p{7,2},...
-                p{8,2},...
-                p{9,2},...
-                p{10,2});
-        end
+        % pimages = cell(natime+1,1);
+        % parfor i=1:natime+1
+        %     pimages{i} = preproc.PIVlab_preproc (images{i},...
+        %         p{1,2},...
+        %         p{2,2},...
+        %         p{3,2},...
+        %         p{4,2},...
+        %         p{5,2},...
+        %         p{6,2},...
+        %         p{7,2},...
+        %         p{8,2},...
+        %         p{9,2},...
+        %         p{10,2});
+        % end
         % pairwise piv
-        frame_start = frames(1,1)-1;
+        frame_start = frames(1,1)-1;        
+        
         parfor i=1:natime
-            [x{frame_start+i}, y{frame_start+i}, u{frame_start+i}, v{frame_start+i}, typevector{frame_start+i},correlation_map{frame_start+i},~]= ...
-                piv.piv_FFTmulti(pimages{i},pimages{i+1},...
-                s{1,2},...
-                s{2,2},...
-                s{3,2},...
-                s{4,2},...
-                s{5,2},...
-                s{6,2},...
-                s{7,2},...
-                s{8,2},...
-                s{9,2},...
-                s{10,2},...
-                s{11,2},...
-                s{12,2},...
-                s{13,2},0,...
-                s{14,2},...
-                s{15,2}); %actual PIV analysis
-        end
+             image_array = images(i:i+ensemble_size-1);
+             [x{frame_start+i}, y{frame_start+i}, u{frame_start+i}, v{frame_start+i}, typevector{frame_start+i},correlation_map{frame_start+i}]= ...
+                 piv.piv_FFTensemble_rudolph([],[],[],image_array,[],[],...
+                 p{2,2}, ...
+                 p{4,2},...
+                 p{6,2}, ...
+                 p{3,2}, ...
+                 p{5,2}, ...
+                 p{7,2}, ...
+                 p{8,2}, ...
+                 s{5,2}, ...
+                 s{4,2}, ...
+                 s{1,2}, ...
+                 s{2,2}, ...
+                 s{3,2}, ...
+                 s{6,2}, ...
+                 s{7,2}, ...
+                 s{8,2}, ...
+                 s{9,2}, ...
+                 s{12,2}, ...
+                 s{10,2}, ...
+                 s{14,2}, ...
+                 true);
+             fprintf('processing %d/%d,[%d ... %d]\n',i,ensemble_size,frames(1,i),frames(2,i));
 
-        for i=1:natime
-            disp(sprintf('processing %d/%d,[%d/%d]',i,amount,frames(1,i),frames(2,i)));
-        end
-        images{1} = images{end};
+         end
+        
+        images(1:ensemble_size-1) = images(end-(ensemble_size-1)+1:end);
+        images(ensemble_size:end) = [];
         frames = frames + natime;
-        pairs_processed = pairs_processed + natime;
+        groups_processed = groups_processed + natime;
     end
 end
 % read frames (serial)
@@ -332,10 +336,10 @@ else % sequential loop
 end
 
 %% optionally, make a movie of the analysis
-out.filename = [video_file(1:end-4) '_annotated.avi'];
-out.v = VideoWriter(out.filename,'Motion JPEG AVI');
-out.v.Quality = 98;
-open(out.v);
+outfilename = [video_file(1:end-4) '_annotated_ensemble.avi'];
+vout = VideoWriter(outfilename,'Motion JPEG AVI');
+vout.Quality = 98;
+open(vout);
 outfig = figure(99);
 set(outfig,'Visible','off');
 
@@ -372,7 +376,7 @@ for i=2:amount-1
     writeVideo(out.v,getframe(outfig));
 end
 set(outfig,'Visible','on')
-close(out.v);
+close(vout);
 
 
 %% Plot the streak image and velocity statistics
@@ -457,10 +461,10 @@ end
 %%
 % Save the data to a Matlab file
 % save(fullfile(directory, [filenames{1} '_' filenames{end} '_' num2str(amount) '_frames_result_.mat']));
-save([video_file(1:end-4) '_piv_result.mat'])
+save([video_file(1:end-4) '_piv_result_ensemble.mat'])
 
 %%
-clearvars -except p s r x y u v typevector directory filenames u_filt v_filt typevector_filt correlation_map image1 image2
+% clearvars -except p s r x y u v typevector directory filenames u_filt v_filt typevector_filt correlation_map image1 image2
 disp('DONE.')
 
 function [u_filt, v_filt,typevector_filt] = post_proc_wrapper(u,v,typevector,post_proc_setting,paint_nan)
