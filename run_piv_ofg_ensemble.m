@@ -8,7 +8,7 @@ clc; clear;
 close all
 addpath('PIVlab')
 
-nr_of_cores = 1; % integer, 1 means single core, greater than 1 means parallel
+nr_of_cores = 4; %integer, 1 means single core, greater than 1 means parallel
 if nr_of_cores > 1
     try
         local_cluster=parcluster('local'); % single node
@@ -22,9 +22,14 @@ end
 movie = true;
 
 filepath = '/Volumes/GeyserData/Old Faithful/04-11-2025/32216_1_102_Y20250411H090557.221485000';
-% filenames = dir([filepath '/img*.png']);
 video_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/32216_1_102_Y20250411H090557.221485000.mp4';
 roi_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/32216_1_102_Y20250411H090557.221485000_roi.mat';
+
+use_video = true;
+
+% filepath = './04-11-2025/32216_1_102_Y20250411H090557.221485000';
+% video_file = './04-11-2025/32216_1_102_Y20250411H090557.221485000.mp4';
+% roi_file = './04-11-2025/32216_1_102_Y20250411H090557.221485000_roi.mat';
 % SCALE INFO
 % location 1 is 109m from vent. FOV at 35 mm is 59.6 m -> 59.6/1920=0.0310
 % m/pixel, 120 fps
@@ -34,8 +39,16 @@ fs = 120;        % framerate, 1/s
 vscale = lscale*fs;    %(pixel/frame)*(meter/pixel)*(frame/s)
 
 load(roi_file);
-video = VideoReader(video_file);
-amount = video.NumFrames;
+if use_video
+    video = VideoReader(video_file);
+    amount = video.NumFrames;
+else
+    file_list = dir(filepath);
+    % exclude bs hidden files
+    file_list = file_list( arrayfun(@(x) x.name(1) ~= '.',file_list) );    
+    file_counter = 1;
+    amount = length(file_list);
+end
 
 
 %% Create list of images inside user specified directory
@@ -149,13 +162,17 @@ if ~movie
     % end
 else
     groups_processed = 0;
-    natime = 33; % number of image sequences to process at a time
-    ensemble_size = 8; % number of images to analyze at once (ensemble size)
+    natime = 24; % number of image sequences to process at a time
+    ensemble_size = 10; % number of images to analyze at once (ensemble size)
     images = cell(natime+ensemble_size-1,1);
     % read first frames
     nread=0;
     for i=1:ensemble_size      
-        images{i} = video.readFrame();
+        if use_video
+            images{i} = video.readFrame();
+        else            
+            images{i} = imread( fullfile(file_list(nread+1).folder,file_list(nread+1).name) );
+        end
         nread = nread+1;
     end
     
@@ -166,8 +183,13 @@ else
         end
         % read frames (serial)
         for i=(ensemble_size):(ensemble_size + natime-1)
-            images{i} = video.readFrame();
-            nread = nread+1;
+            if use_video
+                images{i} = video.readFrame();
+                nread = nread+1;
+            else
+                images{i} = imread( fullfile(file_list(nread+1).folder,file_list(nread+1).name) );
+                nread = nread+1;
+            end
         end
         % preprocess frames (parallel)
         % pimages = cell(natime+1,1);
@@ -301,7 +323,7 @@ r = cell(6,1);
 %Parameter     %Setting                                     %Options
 r{1,1}= 'Calibration factor, 1 for uncalibrated data';      r{1,2}=1;                   % Calibration factor for u
 r{2,1}= 'Calibration factor, 1 for uncalibrated data';      r{2,2}=1;                   % Calibration factor for v
-r{3,1}= 'Valid velocities [u_min; u_max; v_min; v_max]';    r{3,2}=[-20; 20; -20; 20];  % Maximum allowed velocities, for uncalibrated data: maximum displacement in pixels
+r{3,1}= 'Valid velocities [u_min; u_max; v_min; v_max]';    r{3,2}=[-5; 5; -5; 5];  % Maximum allowed velocities, for uncalibrated data: maximum displacement in pixels
 r{4,1}= 'Stdev check?';                                     r{4,2}=1;                   % 1 = enable global standard deviation test
 r{5,1}= 'Stdev threshold';                                  r{5,2}=2;                   % Threshold for the stdev test (in standard deviations)
 r{6,1}= 'Local median check?';                              r{6,2}=0;                   % 1 = enable local median test
@@ -346,13 +368,23 @@ set(outfig,'Visible','off');
 streak = zeros(roi(3)+1,amount-1,'uint8');
 streak_pos = fix(roi(2)+roi(4)/2); 
 
-for i=2:amount-1
+for i=2:amount-ensemble_size
     i
     if i==2
-        image1 = read(video,i);
+        if use_video
+            image1 = read(video,i);
+        else
+            image1 = imread( fullfile(file_list(i).folder,file_list(i).name) );
+        end
     else
-        image1 = video.readFrame();
+        if use_video
+            image1 = video.readFrame();
+        else
+            image1 = imread( fullfile(file_list(i).folder,file_list(i).name) );
+        end
     end
+    min_intens=0;
+    max_intens=1;
     image1p = preproc.PIVlab_preproc (image1,...
         p{1,2},...
         p{2,2},...
@@ -362,8 +394,8 @@ for i=2:amount-1
         p{6,2},...
         p{7,2},...
         p{8,2},...
-        p{9,2},...
-        p{10,2}); %preprocess image
+        min_intens,...
+        max_intens); %preprocess image
     % figure(outfig)
     set(outfig,'Visible','off');
     streak(:,i) = image1p(streak_pos,roi(1):roi(1)+roi(3));   
@@ -373,7 +405,7 @@ for i=2:amount-1
     % i=1999
     uscale=20;
     quiver(x{i},y{i},uscale*u_filt{i},uscale*v_filt{i},'off');
-    writeVideo(out.v,getframe(outfig));
+    writeVideo(vout,getframe(outfig));
 end
 set(outfig,'Visible','on')
 close(vout);
@@ -381,17 +413,17 @@ close(vout);
 
 %% Plot the streak image and velocity statistics
 t=(0:amount-1)/fs;
-test=cat(3,u{:});
-medFilt = dsp.MedianFilter(20);% 1/10 second?
+umat=cat(3,u{:});
+medFilt = dsp.MedianFilter(1);% 1/10 second?
 % test = medfilt1(double(test),10,[],3);
-ntime = size(test,3);
+ntime = size(umat,3);
 umax = zeros(ntime,1);
 imax = zeros(ntime,1);% row where max v occurs
 jmax = zeros(ntime,1);
 v0 = zeros(ntime,1);
 for i=1:ntime
-    [utmp,itmp] = max(test(:,:,i),[],[1 2],"linear");
-    [rowtmp,coltmp] = ind2sub(size(test(:,:,i)),itmp);
+    [utmp,itmp] = max(umat(:,:,i),[],[1 2],"linear");
+    [rowtmp,coltmp] = ind2sub(size(umat(:,:,i)),itmp);
     umax(i) = utmp;
     % x and y are the image coordinates (on the original image) of the PIV
     % interrogation window coordinates.
@@ -401,7 +433,7 @@ for i=1:ntime
     v0(i) = sqrt( (9.81*jmax(i)*lscale+0.5*(umax(i)*vscale)^2)*2 );% in m/s
 end
 
-umax=squeeze(max(double(test),[],[1 2]))*vscale;
+umax=squeeze(max(double(umat),[],[1 2]))*vscale;
 umax = medFilt(umax);
 v0 = medFilt(v0);
 height = 1/2*umax.^2/9.81;
@@ -412,14 +444,14 @@ ycoord = (0:roi(3)-1)*lscale;
 A = pi*0.5^2; % just a guess of the orifice size
 rho = 16;% an estimate - given thermodynamic constraints...
 Q = A*v0;
-volume = cumtrapz(t(1:end-1),Q')*rho/1000;
+volume = cumtrapz(t(1:length(Q)),Q')*rho/1000;
 
 figure();
 h1=subplot(2,1,1);
 imagesc(t(1:end-1),ycoord,double(streak));
 hold on
-plot(t(1:end-1),height,'r');
-plot(t(1:end-1),height_v0,'b');
+plot(t(1:length(height)),height,'r');
+plot(t(1:length(height)),height_v0,'b');
 
 set(gca,'YDir','normal')
 colormap('bone')
@@ -428,7 +460,7 @@ xlabel('Time (s)')
 ylabel('Height (m)')
 h2=subplot(2,1,2);
 hold on
-[a,p1,p2] = plotyy(t(1:end-1),squeeze(umax),t(1:end-1),volume);
+[a,p1,p2] = plotyy(t(1:length(umax)),squeeze(umax),t(1:length(volume)),volume);
 hold on
 
 plot(a(1),t(1:end-1),v0,'Color',p1.Color);

@@ -38,13 +38,14 @@ switch location
         vscale = lscale*fs;    %(pixel/frame)*(meter/pixel)*(frame/s)
     case 4
 
-    else
+    otherwise
 
+    
 end
 
 load(roi_file);
 video = VideoReader(video_file);
-amount = video.NumFrames;
+amount = 16000;%video.NumFrames;
 
 
 %% Create list of images inside user specified directory
@@ -63,18 +64,18 @@ directory= fullfile(fileparts(fileparts(which('PIVlab_commandline.m'))),'Example
 %% Standard PIV Settings
 s = cell(15,2); % To make it more readable, let's create a "settings table"
 %Parameter                          %Setting			%Options
-s{1,1}= 'Int. area 1';              s{1,2}=64;			% window size of first pass
+s{1,1}= 'Int. area 1';              s{1,2}=32;			% window size of first pass
 s{2,1}= 'Step size 1';              s{2,2}=16;			% step of first pass
 s{3,1}= 'Subpix. finder';           s{3,2}=1;			% 1 = 3point Gauss, 2 = 2D Gauss
 s{4,1}= 'Mask';                     s{4,2}=[];			% If needed, supply a binary image mask with the same size as the PIV images
 s{5,1}= 'ROI';                      s{5,2}=roi;			% Region of interest: [x,y,width,height] in pixels, may be left empty to process the whole image
 s{6,1}= 'Nr. of passes';            s{6,2}=2;			% 1-4 nr. of passes
-s{7,1}= 'Int. area 2';              s{7,2}=48;			% second pass window size
+s{7,1}= 'Int. area 2';              s{7,2}=24;			% second pass window size
 s{8,1}= 'Int. area 3';              s{8,2}=40;			% third pass window size
 s{9,1}= 'Int. area 4';              s{9,2}=48;			% fourth pass window size
 s{10,1}='Window deformation';       s{10,2}='*spline';	% '*spline' is more accurate, but slower
 s{11,1}='Repeated Correlation';     s{11,2}=1;			% 0 or 1 : Repeat the correlation four times and multiply the correlation matrices.
-s{12,1}='Disable Autocorrelation';  s{12,2}=0;			% 0 or 1 : Disable Autocorrelation in the first pass.
+s{12,1}='Disable Autocorrelation';  s{12,2}=1;			% 0 or 1 : Disable Autocorrelation in the first pass.
 s{13,1}='Correlation style';        s{13,2}=1;			% 0 or 1 : Use circular correlation (0) or linear correlation (1).
 s{14,1}='Repeat last pass';			s{14,2}=1;			% 0 or 1 : Repeat the last pass of a multipass analyis
 s{15,1}='Last pass quality slope';  s{15,2}=0.025;		% Repetitions of last pass will stop when the average difference to the previous pass is less than this number.
@@ -91,8 +92,8 @@ p{5,1}= 'Highpass size';         p{5,2}=64;         % highpass size
 p{6,1}= 'Clipping';              p{6,2}=0;          % 1 = enable clipping, 0 = disable
 p{7,1}= 'Wiener';                p{7,2}=0;          % 1 = enable Wiener2 adaptive denoise filter, 0 = disable
 p{8,1}= 'Wiener size';           p{8,2}=3;          % Wiener2 window size
-p{9,1}= 'Minimum intensity';     p{9,2}='auto';        % Minimum intensity of input image (0 = no change)
-p{10,1}='Maximum intensity';     p{10,2}='auto';       % Maximum intensity on input image (1 = no change)
+p{9,1}= 'Minimum intensity';     p{9,2}=0;%'auto';        % Minimum intensity of input image (0 = no change)
+p{10,1}='Maximum intensity';     p{10,2}=1;%'auto';       % Maximum intensity on input image (1 = no change)
 
 %% other settings
 pairwise = 0; % 0 for [A+B], [B+C], [C+D]... sequencing style, and 1 for [A+B], [C+D], [E+F]... sequencing style
@@ -174,7 +175,13 @@ else
         end
         % preprocess frames (parallel)
         pimages = cell(natime+1,1);
-        parfor i=1:natime+1
+        mask = cell(natime+1,1);
+        for i=1:natime+1
+
+            % masking code
+            mask{i} = [];
+            
+
             pimages{i} = preproc.PIVlab_preproc (images{i},...
                 p{1,2},...
                 p{2,2},...
@@ -189,13 +196,15 @@ else
         end
         % pairwise piv
         frame_start = frames(1,1)-1;
-        parfor i=1:natime
+        for i=1:natime
+             disp(sprintf('processing %d/%d,[%d/%d]',i,amount,frames(1,i),frames(2,i)));
+
             [x{frame_start+i}, y{frame_start+i}, u{frame_start+i}, v{frame_start+i}, typevector{frame_start+i},correlation_map{frame_start+i},~]= ...
                 piv.piv_FFTmulti(pimages{i},pimages{i+1},...
                 s{1,2},...
                 s{2,2},...
                 s{3,2},...
-                s{4,2},...
+                mask{i},...
                 s{5,2},...
                 s{6,2},...
                 s{7,2},...
@@ -209,9 +218,9 @@ else
                 s{15,2}); %actual PIV analysis
         end
 
-        for i=1:natime
-            disp(sprintf('processing %d/%d,[%d/%d]',i,amount,frames(1,i),frames(2,i)));
-        end
+        % for i=1:natime
+            % disp(sprintf('processing %d/%d,[%d/%d]',i,amount,frames(1,i),frames(2,i)));
+        % end
         images{1} = images{end};
         frames = frames + natime;
         pairs_processed = pairs_processed + natime;
@@ -337,7 +346,7 @@ out.v = VideoWriter(out.filename,'Motion JPEG AVI');
 out.v.Quality = 98;
 open(out.v);
 outfig = figure(99);
-set(outfig,'Visible','off');
+% set(outfig,'Visible','on');
 
 streak = zeros(roi(3)+1,amount-1,'uint8');
 streak_pos = fix(roi(2)+roi(4)/2); 
@@ -361,7 +370,7 @@ for i=2:amount-1
         p{9,2},...
         p{10,2}); %preprocess image
     % figure(outfig)
-    set(outfig,'Visible','off');
+    % set(outfig,'Visible','off');
     streak(:,i) = image1p(streak_pos,roi(1):roi(1)+roi(3));   
     clf();
     imshow(image1p);
@@ -378,6 +387,10 @@ close(out.v);
 %% Plot the streak image and velocity statistics
 t=(0:amount-1)/fs;
 test=cat(3,u{:});
+corrs=cat(3,correlation_map{:});
+
+test(corrs<0.5) = NaN;
+
 medFilt = dsp.MedianFilter(20);% 1/10 second?
 % test = medfilt1(double(test),10,[],3);
 ntime = size(test,3);
@@ -385,8 +398,8 @@ umax = zeros(ntime,1);
 imax = zeros(ntime,1);% row where max v occurs
 jmax = zeros(ntime,1);
 v0 = zeros(ntime,1);
-for i=1:ntime
-    [utmp,itmp] = max(test(:,:,i),[],[1 2],"linear");
+for i=1:ntime    
+    [utmp,itmp] = max(test(:,1:10,i),[],[1 2],"linear");
     [rowtmp,coltmp] = ind2sub(size(test(:,:,i)),itmp);
     umax(i) = utmp;
     % x and y are the image coordinates (on the original image) of the PIV
@@ -398,15 +411,15 @@ for i=1:ntime
 end
 
 umax=squeeze(max(double(test),[],[1 2]))*vscale;
-umax = medFilt(umax);
-v0 = medFilt(v0);
+umax = movmedian(umax,11);
+v0 = movmedian(v0,11);
 height = 1/2*umax.^2/9.81;
 height_v0 = 1/2*v0.^2/9.81;% in meters
 ycoord = (0:roi(3)-1)*lscale;
 
 % volume estimate
-A = pi*0.5^2; % just a guess of the orifice size
-rho = 16;% an estimate - given thermodynamic constraints...
+A = pi*0.4^2; % just a guess of the orifice size
+rho = 28;% an estimate - given thermodynamic constraints...
 Q = A*v0;
 volume = cumtrapz(t(1:end-1),Q')*rho/1000;
 
@@ -426,8 +439,9 @@ h2=subplot(2,1,2);
 hold on
 [a,p1,p2] = plotyy(t(1:end-1),squeeze(umax),t(1:end-1),volume);
 hold on
-
-plot(a(1),t(1:end-1),v0,'Color',p1.Color);
+set(p1,'Color','r');
+a(2).YLabel.String='Discharge (m^3)';
+plot(a(1),t(1:end-1),v0,'Color','b');
 % plot(t(1:end-1),squeeze(umax));
 xlabel('Time (s)');
 ylabel('Velocity (m/s)')

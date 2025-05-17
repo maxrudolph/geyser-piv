@@ -9,18 +9,18 @@ filelist = filelist( arrayfun(@(x) x.name(1) ~= '.',filelist));
 
 %% Loop over the video files
 nfile = length(filelist);
-for i=1:nfile
+for i=1:1%nfile
     success = false;
     while ~success
         nplot = 15;
         ff = fullfile(filelist(i).folder,filelist(i).name);
         v = VideoReader(ff);
         nframes = v.NumFrames;
-        % seek to middle of file
+        % seek to nplot many locations in the file
         img1 = [];
         for j=1:nplot
             ind = floor((j-1)*nframes/nplot)+1;
-            img = read(v,ind);
+            img = read(v,ind); % assemble a composite image from nplot-many frames of the video
             if j==1
                 img1=img;
             else
@@ -48,10 +48,31 @@ for i=1:nfile
                 img1 = cat(1,img1,img);
             end
         end
-        clf();
+        % selct a sub-ROI for pixel statistics used in masking
+        % mask_roi = drawrectangle();
+        % mask_roi_pix = fix(mask_roi.Position);
+        % mask_roi_pix0 = mask_roi_pix;
+        % mask_roi_pix(1) = mod(mask_roi_pix(1),nx);
+        % % make a vector of pixel values inside the selected region
+        % pixval = [];
+        % for j=1:nplot
+        %     ind = floor((j-1)*nframes/nplot)+1;
+        %     img = read(v,ind);
+        %     img = img( mask_roi_pix(1):mask_roi_pix(1)+mask_roi_pix(3) , mask_roi_pix(2):mask_roi_pix(2)+mask_roi_pix(4), : );
+        %     if j==1
+        %         img2=img;
+        %     else
+        %         img2 = cat(1,img2,img);
+        %     end
+        % end
+        % figure(3);
+        % img2 = permute(img2,[2 1 3]);
+        % imshow(img2);
 
+        figure(2);
         img1 = permute(img1,[2 1 3]);
         imshow(img1);
+        title('ROI image')
         set(gca,'YDir','normal');
         yn = menu('Looks good?','Yes','No');
         if yn == 1
