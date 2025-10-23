@@ -1,7 +1,8 @@
 clear;
 close all;
 
-filepath = '/Volumes/GeyserData/Old Faithful/04-11-2025/';
+% filepath = '/Volumes/GeyserData/Old Faithful/04-11-2025/';
+filepath = '~/Box/Geyser Field Experiments/Old Faithful/High Speed Video/04-11-2025/'
 
 % find files on path plus dates with suffix .mp4
 [filelist] = dir([filepath '*.mp4']);
@@ -9,7 +10,7 @@ filelist = filelist( arrayfun(@(x) x.name(1) ~= '.',filelist));
 
 %% Loop over the video files
 nfile = length(filelist);
-for i=1:1%nfile
+for i=2:nfile
     success = false;
     while ~success
         nplot = 15;

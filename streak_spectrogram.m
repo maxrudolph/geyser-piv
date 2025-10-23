@@ -4,20 +4,15 @@ addpath SoundSpeedScript_Karlstrometal2013/
 % filepath = '/Volumes/GeyserData/Old Faithful/04-11-2025/32216_1_102_Y20250411H090557.221485000';
 % video_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/32216_1_102_Y20250411H090557.221485000.mp4';
 % roi_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/32216_1_102_Y20250411H090557.221485000_roi.mat';
-fs = 120;               % framerate, 1/s
 % location = 1;
 % load(roi_file);
 % roi(1) = 233;
 % roi(3) = 150;
 
 % % second video
-% filepath = '/Volumes/GeyserData/Old Faithful/04-11-2025/';
-filepath = '~/Box/Geyser Field Experiments/Old Faithful/High Speed Video/04-11-2025/'
-% video_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/old-faithful-4112028_32216_F2_103_Y20250411H101013.692794000.mp4';
-video_file = '~/Box/Geyser Field Experiments/Old Faithful/High Speed Video/04-11-2025/old-faithful-4112028_32216_F2_103_Y20250411H101013.692794000.mp4';
-% roi_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/old-faithful-4112028_32216_F2_103_Y20250411H101013.692794000_roi.mat';
-roi_file = '~/Box/Geyser Field Experiments/Old Faithful/High Speed Video/04-11-2025/old-faithful-4112028_32216_F2_103_Y20250411H101013.692794000_roi.mat';
-fs = 120;
+filepath = '/Volumes/GeyserData/Old Faithful/04-11-2025/';
+video_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/old-faithful-4112028_32216_F2_103_Y20250411H101013.692794000.mp4';
+roi_file = '/Volumes/GeyserData/Old Faithful/04-11-2025/old-faithful-4112028_32216_F2_103_Y20250411H101013.692794000_roi.mat';
 location = 1; % camera location - corresponds to locations in field notebook
 load(roi_file);
 roi(3) = 150;
@@ -25,11 +20,12 @@ roi(3) = 150;
 % note that this varies video by video depending on location and framerate.
 switch location
     case 1
-        lscale = 0.0310;        % (meters) = (lscale)*(pixels)        
-        vscale = lscale*fs;     %(pixel/frame)*(meter/pixel)*(frame/s)
+        lscale = 0.0310;        % (meters) = (lscale)*(pixels)
+        fs = 120;               % framerate, 1/s
+        vscale = lscale*fs;    %(pixel/frame)*(meter/pixel)*(frame/s)
     case 2
         % needs to be updated...
-       
+
     otherwise
         error('NO!!!');
 end
@@ -55,73 +51,88 @@ figure, imshow(bwstreak);
 streak1 = adapthisteq(bwstreak);
 figure, imshow(streak1);
 f = fspecial('gaussian',20,10);
-streak2 = streak1 - imfilter(streak1,f,'symmetric');
+streak2 = streak1;% - imfilter(streak1,f,'symmetric');
 streak2 = adapthisteq(streak2);
 figure, imagesc(streak2)
 
 % streak2=streak1;% this actually gets used for processing, so make sure it's preprocessed adequately.
 %%
 % define chunk length in pixels
-chunk_length = 100; % at 100 fps...
-% define chunk overlap in pixels
-vmin = 1;
-vmax = 10; % frame/pixel
-nvel = 100;
-
+chunk_length = 120; % number of frames
 chunk_stride = 10;%fix(chunk_length/2);
 chunk_start = 1:chunk_stride:(amount-chunk_length-1);
 % chunk_start = 2000;
-chunk_vel = zeros(size(chunk_start));
+% chunk_vel = zeros(size(chunk_start));
 % velocities = fliplr([1./linspace(1/vmax,1/0.01,nvel-1) 0])
-velocities = linspace(vmin,vmax,nvel);
+chunk_velocity = zeros(size(chunk_start));
 
-for i=1:length(chunk_start)
+for i=1:5:length(chunk_start)
     % select the chunk
-    norms = zeros(1,nvel);
+    % norms = zeros(1,nvel);
     k=1;
-    for vel=velocities
-        nrow = size(streak2,1);
-        chunk = zeros(size(streak2,1),chunk_length);
-        for j=1:nrow           
-            % g = 9.81;% g in units of pixel/frame^2
-            % Idea #1: use a quadratic shift
-            % if vel ~= 0 && (j-1) <= 1/2*(1/vel)^2% h=1/2*v^2
-            % time_shift = ((1/(vel*vscale)) - sqrt((1/(vel*vscale))^2 - 4*(g/2)*(j-1)*lscale ))/(g)/fs;
-            % mychunk_start = fix(chunk_start(i) + time_shift);% vel is the velocity in frames/pixel
-            % chunk(j,:) = streak1(j,mychunk_start:mychunk_start + chunk_length-1);
-            % else
-            % chunk(j,:) = 0;
-            % end
-            % Idea #2:
-            % use a linear shift
-            time_shift = (1/vel)*(j-1);
-            mychunk_start = fix(chunk_start(i) + time_shift);% vel is the velocity in frames/pixel
-            if mychunk_start+chunk_length-1>size(streak2,2)
-                break;
-            end
-            chunk(j,:) = streak2(j,mychunk_start:mychunk_start + chunk_length-1);
-        end
-        % tmp = corrcoef(chunk);
-        imsum = sum(chunk,1);
+    % for vel=velocities
+    nrow = size(streak2,1);
+    chunk = streak2(:,chunk_start(i):chunk_start(i)+chunk_length-1);
+    % take 2D FFT of the chunk.
+    % 2D FFT
+    F = fftshift(fft2(chunk-mean(chunk(:))));
+    P = abs(F).^2; % power spectrum
 
-        imdiff = diff(chunk,1);
-        % norms(k) = norm(imdiff(:));
-        norms(k) = var(imsum); % an image with slanting lines will be smoother in the column-sum. maximize the variance in the column sum to determine optimal shift.
-        k = k+1;
-        % figure, imagesc(chunk), set(gca,'YDir','normal'), title([num2str(i) ' ' num2str(vel)])
+    % Frequency axes
+    f_t = (-chunk_length/2:chunk_length/2-1) / (chunk_length / fs); % Hz
+    num_x = size(chunk,1);
+    dx = lscale;
+    f_x = (-num_x/2:num_x/2-1) / (num_x * dx);                   % cycles/m
+    [ftt,fxx] = meshgrid(f_t,f_x);
+        
+    % remove values near zero frequency
+    % P(:,abs(f_t)<0.5)= 0;
+    % P(abs(f_x)<0.5,:)  = 0;
+
+    % Find peak power location
+    [~, idx_max] = max(P(:));
+    [idx_fx, idx_ft] = ind2sub(size(P), idx_max);
+
+    dom_ft = f_t(idx_ft);
+    dom_fx = f_x(idx_fx);
+    v = dom_fx / dom_ft; % m/s
+
+    % compute a covariance matrix of P.
+    Pmean = mean(log10(P(:)));
+    Pstd  = std( log10(P(:)));
+    Pmask = log10(P) > Pmean%+Pstd; % exclude power values except for top ~5% assuming normal dist.
+
+    weights = P(Pmask)';
+
+    angles = atan2(fxx(Pmask)' ,ftt(Pmask)');
+    weights(angles>pi/2 | angles < -pi/2) = [];
+    angles(angles>pi/2 | angles < -pi/2) = [];
+
+    % weighted average
+    sin_sum = sum( weights.*sin(angles) )/sum(weights);
+    cos_sum = sum( weights.*cos(angles) )/sum(weights);
+    % unweighted average performed beter empirically:
+    sin_sum = sum( sin(angles)/length(angles) );
+    cos_sum = sum( cos(angles)/length(angles) );
+    average_angle = pi/2-atan2(sin_sum,cos_sum);
+
+    %diagnostic plot
+    figure(101);clf;
+    subplot(2,1,1);
+    P1 = P;
+    P1(~Pmask)=0;
+    pcolor(ftt,fxx,P1); hold on; shading flat; colorbar(); set(gca,'ColorScale','log');
+    plot([0 60*cos(pi/2-average_angle)],[0 60*sin(pi/2-average_angle)],'r')
+
+    subplot(2,1,2);
+    pcolor((0:chunk_length-1)/fs,lscale*(0:size(chunk,1)-1),chunk); shading flat;
+    colorbar();
+    hold on
+    for k=0:0.2:1.6
+        xdata = [0 2];
+        plot(xdata+k,xdata*tan(-average_angle),'r');
     end
-
-    [n,ind] = max(norms);
-    chunk_vel(i) = velocities(ind);
-    % make a summary figure
-    % tmp = 1./(velocities(ind)*vscale);
-    % tshift = ((tmp) - sqrt(tmp^2-4*(g/2)*(0:nrow-1)*lscale))/(2*g/2);
-
-    % figure(); imagesc( streak1(:,chunk_start(i):chunk_start(i)+chunk_length-1) );
-    % hold on;
-    % plot( ((1:nrow)-1)*velocities(ind),1:nrow,'r');
-    % plot( ((1:nrow)-1)*velocities(ind)+125,1:nrow,'r');
-    % plot( ((1:nrow)-1)*velocities(ind)+250,1:nrow,'r');
+    chunk_velocity(i) = tan(-average_angle);
 end
 %% smoothing / postprocessing of velocity data
 v_cutoff = 40; %m/s, maximum allowable velocity

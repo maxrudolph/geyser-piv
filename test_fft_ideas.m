@@ -13,7 +13,7 @@ f=10;
 fst = 1/(t(2)-t(1));
 fsy = 1/(y(2)-y(1));
 
-zz = 128+64*cos(2*pi*f*(tt-1/v *yy) );
+zz = 128+64*cos(2*pi*f*(tt-1/v *yy) )+rand(size(tt))*64;
 
 figure, imagesc(t,y,zz); colorbar; set(gca,'YDir','normal')
 
